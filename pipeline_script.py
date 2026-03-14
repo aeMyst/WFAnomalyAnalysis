@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ROOT = Path(os.getenv("SCADA_ROOT"))
+OUTPUT_PATH = Path(os.getenv("OUTPUT_PATH"))
 FARMS = ["Wind Farm A", "Wind Farm B", "Wind Farm C"]
 
-OUTPUT_DIR = ROOT / "processed"
-EVENT_OUTPUT_DIR = OUTPUT_DIR / "events"
+EVENT_OUTPUT_DIR = OUTPUT_PATH / "events"
 
 SAVE_FARM_MASTER = os.getenv("SAVE_FARM_MASTER", "true").lower() == "true"
 SAVE_ALL_MASTER = os.getenv("SAVE_ALL_MASTER", "false").lower() == "true"

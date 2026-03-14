@@ -1,4 +1,6 @@
 dataset/
-/.venv
+.venv/
+processed_data/
+__pychache__/
 
 .env
