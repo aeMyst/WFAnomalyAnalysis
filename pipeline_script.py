@@ -231,7 +231,7 @@ def process_farm(root: Path, farm_name: str) -> tuple[pd.DataFrame | None, pd.Da
 
 
 def main() -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
     EVENT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     all_summary = []
@@ -244,12 +244,12 @@ def main() -> None:
             farm_slug = farm.lower().replace(" ", "_")
 
             # Save per-farm summary
-            farm_summary.to_parquet(OUTPUT_DIR / f"{farm_slug}_event_summary.parquet", index=False)
+            farm_summary.to_parquet(OUTPUT_PATH / f"{farm_slug}_event_summary.parquet", index=False)
             all_summary.append(farm_summary)
 
             # Save per-farm master if enabled
             if SAVE_FARM_MASTER and farm_master is not None:
-                farm_master.to_parquet(OUTPUT_DIR / f"{farm_slug}_master.parquet", index=False)
+                farm_master.to_parquet(OUTPUT_PATH / f"{farm_slug}_master.parquet", index=False)
 
                 if SAVE_ALL_MASTER:
                     all_master.append(farm_master)
