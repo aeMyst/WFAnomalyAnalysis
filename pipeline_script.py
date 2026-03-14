@@ -1,15 +1,19 @@
 from pathlib import Path
+import os
 import pandas as pd
 import numpy as np
+from dotenv import load_dotenv
 
-ROOT = Path(r"C:\Users\Peter\OneDrive\Desktop\WFAnalysis\dataset\raw")
+load_dotenv()
+
+ROOT = Path(os.getenv("SCADA_ROOT"))
 FARMS = ["Wind Farm A", "Wind Farm B", "Wind Farm C"]
 
 OUTPUT_DIR = ROOT / "processed"
 EVENT_OUTPUT_DIR = OUTPUT_DIR / "events"
 
-SAVE_FARM_MASTER = False # set true for master parquet
-SAVE_ALL_MASTER = False
+SAVE_FARM_MASTER = os.getenv("SAVE_FARM_MASTER", "true").lower() == "true"
+SAVE_ALL_MASTER = os.getenv("SAVE_ALL_MASTER", "false").lower() == "true"
 
 def load_event_info(event_info_path: Path) -> pd.DataFrame:
     """Load and clean event_info.csv."""
