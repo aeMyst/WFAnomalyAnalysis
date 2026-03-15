@@ -105,3 +105,25 @@ def make_sensor_bar(top_sensors):
         yaxis_title=""
     )
     return apply_plot_theme(fig)
+
+def make_asset_severity_bar(farm_summary):
+    fig = px.bar(
+        farm_summary.groupby("asset_id")["severity_score"]
+        .mean()
+        .reset_index()
+        .sort_values("severity_score", ascending=True),
+        x = "severity_score",
+        y = "asset_id",
+        orientation="h",
+        title="Average Severity Score by Turbine",
+        color="severity_score",
+        color_continuous_scale=[[0, NORMAL],
+            [0.5, "#d29922"],
+            [1, ANOMALY]]
+    )
+    fig.update_layout(
+        xaxis_title="Average Severity Score",
+        yaxis_title="Turbine ID",
+        coloraxis_showscale=False
+    )
+    return apply_plot_theme(fig)

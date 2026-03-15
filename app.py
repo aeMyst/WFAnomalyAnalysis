@@ -8,6 +8,7 @@ from charts_util import (
     make_severity_boxplot,
     make_severity_histogram,
     make_wind_power_scatter,
+    make_asset_severity_bar
 )
 from data_loader import load_status_distribution, load_summary
 from helper import compute_sensor_separation_for_farm, load_wind_power_points
@@ -126,5 +127,11 @@ with col4:
         st.plotly_chart(fig_bar, use_container_width=True, height=CHART_HEIGHT, config={"displayModeBar": False})
     else:
         st.info("Sensor comparison data is not available for this wind farm.")
+
+col5, col6 = st.columns(2)
+
+with col5:
+    fig_asset = make_asset_severity_bar(farm_summary)
+    st.plotly_chart(fig_asset, use_container_width=True, height=CHART_HEIGHT, config={"displayModeBar": False})
 
 status_df = load_status_distribution(farm)
