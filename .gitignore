@@ -1,6 +1,6 @@
 dataset/
 .venv/
 processed_data/
-__pychache__/
+__pycache__/
 
 .env

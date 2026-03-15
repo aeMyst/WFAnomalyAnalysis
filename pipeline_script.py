@@ -15,8 +15,17 @@ EVENT_OUTPUT_DIR = OUTPUT_PATH / "events"
 SAVE_FARM_MASTER = os.getenv("SAVE_FARM_MASTER", "true").lower() == "true"
 SAVE_ALL_MASTER = os.getenv("SAVE_ALL_MASTER", "false").lower() == "true"
 
+STATUS_LABELS = {
+    0: "Normal Operation",
+    1: "Derated Operation",
+    2: "Idling",
+    3: "Service",
+    4: "Downtime",
+    5: "Other",
+}
+
+
 def load_event_info(event_info_path: Path) -> pd.DataFrame:
-    """Load and clean event_info.csv."""
     events = pd.read_csv(event_info_path, sep=";").copy()
 
     required_cols = ["event_id", "event_label", "event_start_id", "event_end_id"]
@@ -38,7 +47,6 @@ def load_event_info(event_info_path: Path) -> pd.DataFrame:
 
 
 def load_event_dataset(file_path: Path) -> pd.DataFrame:
-    """Load one event CSV and clean basic columns."""
     df = pd.read_csv(file_path, sep=";").copy()
 
     if "id" not in df.columns:
@@ -55,20 +63,31 @@ def load_event_dataset(file_path: Path) -> pd.DataFrame:
 
 
 def normalize_train_test_column(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize train_test values."""
     if "train_test" in df.columns:
         df["train_test"] = df["train_test"].astype(str).str.strip().str.lower()
     return df
 
 
+def normalize_status_column(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardize operational status to status_type_id.
+    """
+    if "status_type_id" in df.columns:
+        df["status_type_id"] = pd.to_numeric(df["status_type_id"], errors="coerce")
+    elif "status_type" in df.columns:
+        df["status_type_id"] = pd.to_numeric(df["status_type"], errors="coerce")
+
+    return df
+
+
 def get_sensor_columns(df: pd.DataFrame) -> list[str]:
-    """Return non-metadata columns."""
     meta_cols = {
         "time_stamp",
         "asset_id",
         "id",
         "train_test",
         "status_type_id",
+        "status_type",
         "event_id",
         "event_label",
         "farm",
@@ -78,7 +97,6 @@ def get_sensor_columns(df: pd.DataFrame) -> list[str]:
 
 
 def optimize_event_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Downcast numeric columns to reduce memory usage."""
     if "id" in df.columns:
         df["id"] = pd.to_numeric(df["id"], errors="coerce").astype("int32")
 
@@ -86,7 +104,7 @@ def optimize_event_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["asset_id"] = pd.to_numeric(df["asset_id"], errors="coerce").astype("int16")
 
     if "status_type_id" in df.columns:
-        df["status_type_id"] = pd.to_numeric(df["status_type_id"], errors="coerce").astype("int32")
+        df["status_type_id"] = pd.to_numeric(df["status_type_id"], errors="coerce")
 
     if "in_event_window" in df.columns:
         df["in_event_window"] = pd.to_numeric(df["in_event_window"], errors="coerce").astype("int8")
@@ -101,23 +119,94 @@ def optimize_event_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def compute_event_metrics(g: pd.DataFrame, sensor_cols: list[str]) -> dict:
-    """Compute summary metrics for one event."""
+def detect_wind_power_columns(df: pd.DataFrame) -> tuple[str | None, str | None]:
+    cols = list(df.columns)
+    lower_map = {c.lower(): c for c in cols}
+
+    preferred_wind = [
+        "wind_speed_3_avg",
+        "wind_speed_4_avg",
+        "wind_speed_avg",
+        "windspeed_avg",
+    ]
+    preferred_power = [
+        "power_29_avg",
+        "power_30_avg",
+        "power_avg",
+    ]
+
+    for c in preferred_wind:
+        if c in lower_map:
+            wind_col = lower_map[c]
+            break
+    else:
+        wind_col = None
+
+    for c in preferred_power:
+        if c in lower_map:
+            power_col = lower_map[c]
+            break
+    else:
+        power_col = None
+
+    if wind_col is None:
+        wind_candidates = [
+            c for c in cols
+            if ("wind" in c.lower()) and ("speed" in c.lower())
+        ]
+        wind_candidates = sorted(
+            wind_candidates,
+            key=lambda x: (
+                0 if "avg" in x.lower() else 1,
+                0 if "mean" in x.lower() else 1,
+                len(x)
+            )
+        )
+        if wind_candidates:
+            wind_col = wind_candidates[0]
+
+    if power_col is None:
+        power_candidates = [
+            c for c in cols
+            if ("power" in c.lower())
+            and ("reactive" not in c.lower())
+            and ("apparent" not in c.lower())
+        ]
+        power_candidates = sorted(
+            power_candidates,
+            key=lambda x: (
+                0 if "avg" in x.lower() else 1,
+                0 if "mean" in x.lower() else 1,
+                0 if "active" in x.lower() else 1,
+                len(x)
+            )
+        )
+        if power_candidates:
+            power_col = power_candidates[0]
+
+    return wind_col, power_col
+
+
+def compute_metric_block(g: pd.DataFrame, sensor_cols: list[str]) -> dict:
+    """
+    Compute metric block for a given subset of rows.
+    """
     train = g[g["train_test"] == "train"] if "train_test" in g.columns else pd.DataFrame()
     prediction = g[g["train_test"] == "prediction"] if "train_test" in g.columns else pd.DataFrame()
     window = g[g["in_event_window"] == 1] if "in_event_window" in g.columns else pd.DataFrame()
 
-    asset_id = g["asset_id"].iloc[0] if "asset_id" in g.columns else np.nan
-    event_label = g["event_label"].iloc[0] if "event_label" in g.columns else None
-    farm_name = g["farm"].iloc[0] if "farm" in g.columns else None
-    event_id = g["event_id"].iloc[0] if "event_id" in g.columns else None
-
-    max_z_shift = np.nan
-    max_volatility_ratio = np.nan
-    energy_score = np.nan
-    num_sensors_z_gt_1 = 0
-    num_sensors_z_gt_1_5 = 0
-    severity_score = np.nan
+    out = {
+        "rows": int(len(g)),
+        "train_rows": int(len(train)),
+        "prediction_rows": int(len(prediction)),
+        "window_rows": int(len(window)),
+        "max_z_shift": np.nan,
+        "max_volatility_ratio": np.nan,
+        "energy_score": np.nan,
+        "num_sensors_z_gt_1": 0,
+        "num_sensors_z_gt_1_5": 0,
+        "severity_score": np.nan,
+    }
 
     if len(train) > 0 and len(window) > 0 and len(sensor_cols) > 0:
         train_mean = train[sensor_cols].mean()
@@ -132,32 +221,85 @@ def compute_event_metrics(g: pd.DataFrame, sensor_cols: list[str]) -> dict:
         max_volatility_ratio = float(vol_ratio.max()) if pd.notna(vol_ratio.max()) else np.nan
         energy_score = float(np.sqrt(np.nansum(z_scores.to_numpy() ** 2)))
 
-        num_sensors_z_gt_1 = int((z_scores > 1).sum())
-        num_sensors_z_gt_1_5 = int((z_scores > 1.5).sum())
+        out["max_z_shift"] = max_z_shift
+        out["max_volatility_ratio"] = max_volatility_ratio
+        out["energy_score"] = energy_score
+        out["num_sensors_z_gt_1"] = int((z_scores > 1).sum())
+        out["num_sensors_z_gt_1_5"] = int((z_scores > 1.5).sum())
 
         if pd.notna(max_volatility_ratio) and max_volatility_ratio > 0:
-            severity_score = float(max_z_shift + np.log(max_volatility_ratio))
+            out["severity_score"] = float(max_z_shift + np.log(max_volatility_ratio))
+
+    return out
+
+
+def compute_event_metrics(
+    g: pd.DataFrame,
+    sensor_cols: list[str],
+    wind_col: str | None = None,
+    power_col: str | None = None,
+) -> dict:
+    asset_id = g["asset_id"].iloc[0] if "asset_id" in g.columns else np.nan
+    event_label = g["event_label"].iloc[0] if "event_label" in g.columns else None
+    farm_name = g["farm"].iloc[0] if "farm" in g.columns else None
+    event_id = g["event_id"].iloc[0] if "event_id" in g.columns else None
+
+    # Full metrics across all rows
+    full_metrics = compute_metric_block(g, sensor_cols)
+
+    # Operational metrics
+    operational_0 = pd.DataFrame()
+    operational_0_2 = pd.DataFrame()
+    pct_status = {f"pct_status_{k}": np.nan for k in range(6)}
+
+    if "status_type_id" in g.columns:
+        status_counts = g["status_type_id"].value_counts(normalize=True, dropna=False)
+        for k in range(6):
+            pct_status[f"pct_status_{k}"] = float(status_counts.get(k, 0.0))
+
+        operational_0 = g[g["status_type_id"] == 0].copy()
+        operational_0_2 = g[g["status_type_id"].isin([0, 2])].copy()
+
+    operational_0_metrics = compute_metric_block(operational_0, sensor_cols) if not operational_0.empty else None
+    operational_0_2_metrics = compute_metric_block(operational_0_2, sensor_cols) if not operational_0_2.empty else None
 
     return {
         "farm": farm_name,
         "event_id": int(event_id),
         "asset_id": asset_id,
         "event_label": event_label,
-        "total_rows": int(len(g)),
-        "train_rows": int(len(train)),
-        "prediction_rows": int(len(prediction)),
-        "window_rows": int(len(window)),
-        "max_z_shift": max_z_shift,
-        "max_volatility_ratio": max_volatility_ratio,
-        "energy_score": energy_score,
-        "num_sensors_z_gt_1": num_sensors_z_gt_1,
-        "num_sensors_z_gt_1_5": num_sensors_z_gt_1_5,
-        "severity_score": severity_score,
+
+        "total_rows": full_metrics["rows"],
+        "train_rows": full_metrics["train_rows"],
+        "prediction_rows": full_metrics["prediction_rows"],
+        "window_rows": full_metrics["window_rows"],
+
+        "max_z_shift": full_metrics["max_z_shift"],
+        "max_volatility_ratio": full_metrics["max_volatility_ratio"],
+        "energy_score": full_metrics["energy_score"],
+        "num_sensors_z_gt_1": full_metrics["num_sensors_z_gt_1"],
+        "num_sensors_z_gt_1_5": full_metrics["num_sensors_z_gt_1_5"],
+        "severity_score": full_metrics["severity_score"],
+
+        "operational_rows_status_0": int(len(operational_0)),
+        "operational_rows_status_0_2": int(len(operational_0_2)),
+
+        "max_z_shift_status_0": operational_0_metrics["max_z_shift"] if operational_0_metrics else np.nan,
+        "max_volatility_ratio_status_0": operational_0_metrics["max_volatility_ratio"] if operational_0_metrics else np.nan,
+        "severity_score_status_0": operational_0_metrics["severity_score"] if operational_0_metrics else np.nan,
+
+        "max_z_shift_status_0_2": operational_0_2_metrics["max_z_shift"] if operational_0_2_metrics else np.nan,
+        "max_volatility_ratio_status_0_2": operational_0_2_metrics["max_volatility_ratio"] if operational_0_2_metrics else np.nan,
+        "severity_score_status_0_2": operational_0_2_metrics["severity_score"] if operational_0_2_metrics else np.nan,
+
+        **pct_status,
+
+        "wind_speed_column": wind_col,
+        "power_output_column": power_col,
     }
 
 
 def process_farm(root: Path, farm_name: str) -> tuple[pd.DataFrame | None, pd.DataFrame]:
-    """Process one wind farm. Returns (farm_master, farm_summary)."""
     farm_dir = root / farm_name
     datasets_dir = farm_dir / "datasets"
     event_info_path = farm_dir / "event_info.csv"
@@ -188,6 +330,7 @@ def process_farm(root: Path, farm_name: str) -> tuple[pd.DataFrame | None, pd.Da
 
             df = load_event_dataset(file_path)
             df = normalize_train_test_column(df)
+            df = normalize_status_column(df)
 
             row = events.loc[events["event_id"] == event_id].iloc[0]
             start_id = int(row["start_id"])
@@ -195,23 +338,28 @@ def process_farm(root: Path, farm_name: str) -> tuple[pd.DataFrame | None, pd.Da
 
             df["in_event_window"] = ((df["id"] >= start_id) & (df["id"] <= end_id)).astype("int8")
             df["event_id"] = np.int32(event_id)
-            df["event_label"] = str(row["event_label"])
+            df["event_label"] = str(row["event_label"]).lower()
             df["farm"] = str(farm_name)
+
+            wind_col, power_col = detect_wind_power_columns(df)
 
             df = optimize_event_dataframe(df)
 
             sensor_cols = get_sensor_columns(df)
-            metrics = compute_event_metrics(df, sensor_cols)
+            metrics = compute_event_metrics(df, sensor_cols, wind_col=wind_col, power_col=power_col)
             summary_rows.append(metrics)
 
-            # Save processed per-event parquet
             event_out_path = farm_event_output_dir / f"{int(event_id)}.parquet"
             df.to_parquet(event_out_path, index=False)
 
             if SAVE_FARM_MASTER:
                 master_parts.append(df)
 
-            print(f"  Processed event {event_id}")
+            print(
+                f"  Processed event {event_id}"
+                f" | wind={wind_col if wind_col else 'None'}"
+                f" | power={power_col if power_col else 'None'}"
+            )
 
         except Exception as e:
             print(f"  Failed event {event_id}: {e}")
@@ -243,11 +391,9 @@ def main() -> None:
 
             farm_slug = farm.lower().replace(" ", "_")
 
-            # Save per-farm summary
             farm_summary.to_parquet(OUTPUT_PATH / f"{farm_slug}_event_summary.parquet", index=False)
             all_summary.append(farm_summary)
 
-            # Save per-farm master if enabled
             if SAVE_FARM_MASTER and farm_master is not None:
                 farm_master.to_parquet(OUTPUT_PATH / f"{farm_slug}_master.parquet", index=False)
 
@@ -260,19 +406,17 @@ def main() -> None:
     if not all_summary:
         raise RuntimeError("No farms were successfully processed.")
 
-    # Save combined summary across all farms
     summary_all = pd.concat(all_summary, ignore_index=True, sort=False)
-    summary_all.to_parquet(OUTPUT_DIR / "summary_all_farms.parquet", index=False)
+    summary_all.to_parquet(OUTPUT_PATH / "summary_all_farms.parquet", index=False)
 
-    # Save combined master only if explicitly enabled
     if SAVE_ALL_MASTER and all_master:
         master_all = pd.concat(all_master, ignore_index=True, sort=False)
-        master_all.to_parquet(OUTPUT_DIR / "master_all_farms.parquet", index=False)
+        master_all.to_parquet(OUTPUT_PATH / "master_all_farms.parquet", index=False)
         print(f"Combined master shape: {master_all.shape}")
 
     print("\nFinished processing all farms.")
     print(f"Combined summary shape: {summary_all.shape}")
-    print(f"Output directory: {OUTPUT_DIR}")
+    print(f"Output directory: {OUTPUT_PATH}")
     print(f"Per-event files directory: {EVENT_OUTPUT_DIR}")
 
 
