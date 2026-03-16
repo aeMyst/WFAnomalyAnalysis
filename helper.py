@@ -6,6 +6,15 @@ from config import META_COLS
 from data_loader import load_event_data, load_summary
 
 
+def normalize_event_label(value: str) -> str:
+    value = str(value).strip().lower()
+    if value in {"anom", "anomaly", "anomalous"}:
+        return "anomaly"
+    if value in {"norm", "normal"}:
+        return "normal"
+    return value
+
+
 def get_numeric_sensor_columns(df: pd.DataFrame):
     return [
         c for c in df.columns
@@ -16,11 +25,21 @@ def get_numeric_sensor_columns(df: pd.DataFrame):
 def compute_sensor_metrics(df: pd.DataFrame):
     sensor_cols = get_numeric_sensor_columns(df)
 
-    train = df[df["train_test"] == "train"].copy()
-    window = df[df["in_event_window"] == 1].copy()
+    train = df[df["train_test"] == "train"].copy() if "train_test" in df.columns else pd.DataFrame()
+    window = df[df["in_event_window"] == 1].copy() if "in_event_window" in df.columns else pd.DataFrame()
 
     if train.empty or window.empty or not sensor_cols:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=[
+            "sensor",
+            "train_mean",
+            "window_mean",
+            "train_std",
+            "window_std",
+            "mean_delta",
+            "z_shift",
+            "volatility_ratio",
+            "importance_score",
+        ])
 
     train_mean = train[sensor_cols].mean()
     train_std = train[sensor_cols].std().replace(0, np.nan)
@@ -40,6 +59,10 @@ def compute_sensor_metrics(df: pd.DataFrame):
     metrics["volatility_ratio"] = metrics["window_std"] / metrics["train_std"]
     metrics.replace([np.inf, -np.inf], np.nan, inplace=True)
 
+    metrics["importance_score"] = (
+        metrics["z_shift"] + np.log1p(metrics["volatility_ratio"].clip(lower=0))
+    )
+
     return metrics
 
 
@@ -51,7 +74,7 @@ def compute_sensor_separation_for_farm(farm: str):
 
     for _, row in farm_events.iterrows():
         event_id = int(row["event_id"])
-        event_label = row["event_label"]
+        event_label = normalize_event_label(row["event_label"])
 
         try:
             df = load_event_data(farm, event_id)
@@ -61,7 +84,7 @@ def compute_sensor_separation_for_farm(farm: str):
 
             metrics["event_id"] = event_id
             metrics["event_label"] = event_label
-            rows.append(metrics[["sensor", "z_shift", "event_label"]])
+            rows.append(metrics[["sensor", "z_shift", "importance_score", "event_label"]])
         except Exception:
             continue
 
@@ -72,16 +95,21 @@ def compute_sensor_separation_for_farm(farm: str):
 
     grouped = (
         all_metrics
-        .groupby(["event_label", "sensor"], as_index=False)[["z_shift"]]
+        .groupby(["event_label", "sensor"], as_index=False)[["z_shift", "importance_score"]]
         .mean()
     )
 
     z_pivot = grouped.pivot(index="sensor", columns="event_label", values="z_shift")
+    imp_pivot = grouped.pivot(index="sensor", columns="event_label", values="importance_score")
 
     result = pd.DataFrame(index=sorted(set(grouped["sensor"])))
     result["avg_anomaly_z"] = z_pivot["anomaly"] if "anomaly" in z_pivot.columns else np.nan
     result["avg_normal_z"] = z_pivot["normal"] if "normal" in z_pivot.columns else np.nan
     result["z_difference"] = result["avg_anomaly_z"] - result["avg_normal_z"]
+
+    result["avg_anomaly_importance"] = imp_pivot["anomaly"] if "anomaly" in imp_pivot.columns else np.nan
+    result["avg_normal_importance"] = imp_pivot["normal"] if "normal" in imp_pivot.columns else np.nan
+    result["importance_difference"] = result["avg_anomaly_importance"] - result["avg_normal_importance"]
 
     return result.reset_index().rename(columns={"index": "sensor"})
 
@@ -133,7 +161,7 @@ def load_wind_power_points(farm: str, max_points_per_event: int = 1200):
 
     for _, row in farm_events.iterrows():
         event_id = int(row["event_id"])
-        event_label = row["event_label"]
+        event_label = normalize_event_label(row["event_label"])
 
         try:
             df = load_event_data(farm, event_id)
@@ -165,6 +193,7 @@ def load_wind_power_points(farm: str, max_points_per_event: int = 1200):
                 continue
 
             temp["event_label"] = event_label
+            temp["event_label_display"] = temp["event_label"]
             temp["event_id"] = event_id
 
             if len(temp) > max_points_per_event:
@@ -181,6 +210,6 @@ def load_wind_power_points(farm: str, max_points_per_event: int = 1200):
             continue
 
     if not all_points:
-        return pd.DataFrame(columns=["wind_speed", "power_output", "event_label", "event_id"])
+        return pd.DataFrame(columns=["wind_speed", "power_output", "event_label", "event_label_display", "event_id"])
 
     return pd.concat(all_points, ignore_index=True)

@@ -36,9 +36,11 @@ st.markdown(
 )
 
 total_events = len(farm_summary)
-anomaly_events = int((farm_summary["event_label"] == "anomaly").sum())
-normal_events = int((farm_summary["event_label"] == "normal").sum())
-avg_severity = farm_summary["severity_score"].mean()
+anomaly_events = int((farm_summary["event_label_display"] == "anomaly").sum())
+normal_events = int((farm_summary["event_label_display"] == "normal").sum())
+
+severity_col = "severity_score_normalized" if "severity_score_normalized" in farm_summary.columns else "severity_score"
+avg_severity = farm_summary[severity_col].mean() if severity_col in farm_summary.columns else float("nan")
 avg_severity_display = f"{avg_severity:.2f}" if pd.notna(avg_severity) else "N/A"
 
 k1, k2, k3, k4 = st.columns(4)
@@ -85,7 +87,7 @@ with k4:
         <div class="kpi-card">
             <div class="kpi-label">Average Severity</div>
             <div class="kpi-value">{avg_severity_display}</div>
-            <div class="kpi-sub">Across all events</div>
+            <div class="kpi-sub">Normalized across events</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -116,10 +118,11 @@ with col4:
     separation = compute_sensor_separation_for_farm(farm)
 
     if not separation.empty:
+        metric_col = "importance_difference" if "importance_difference" in separation.columns else "z_difference"
         top_sensors = (
             separation
-            .dropna(subset=["z_difference"])
-            .sort_values("z_difference", ascending=False)
+            .dropna(subset=[metric_col])
+            .sort_values(metric_col, ascending=False)
             .head(12)
         )
         fig_bar = make_sensor_bar(top_sensors)

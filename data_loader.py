@@ -4,11 +4,28 @@ import streamlit as st
 from config import FARM_SLUGS, PROCESSED_DIR, STATUS_LABELS
 
 
+def normalize_event_label(value: str) -> str:
+    value = str(value).strip().lower()
+    if value in {"anom", "anomaly", "anomalous"}:
+        return "anomaly"
+    if value in {"norm", "normal"}:
+        return "normal"
+    return value
+
+
 @st.cache_data
 def load_summary():
     df = pd.read_parquet(PROCESSED_DIR / "summary_all_farms.parquet").copy()
-    df["farm"] = df["farm"].astype(str)
-    df["event_label"] = df["event_label"].astype(str).str.lower()
+
+    if "farm" in df.columns:
+        df["farm"] = df["farm"].astype(str)
+
+    if "event_label" in df.columns:
+        df["event_label"] = df["event_label"].astype(str).str.lower()
+        df["event_label_display"] = df["event_label"].apply(normalize_event_label)
+    else:
+        df["event_label_display"] = "unknown"
+
     return df
 
 
@@ -23,6 +40,7 @@ def load_event_data(farm: str, event_id: int):
 
     if "event_label" in df.columns:
         df["event_label"] = df["event_label"].astype(str).str.lower()
+        df["event_label_display"] = df["event_label"].apply(normalize_event_label)
 
     if "train_test" in df.columns:
         df["train_test"] = df["train_test"].astype(str).str.lower()

@@ -1,5 +1,8 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 PROCESSED_DIR = Path(os.getenv("OUTPUT_PATH"))
 
@@ -18,6 +21,7 @@ META_COLS = {
     "status_type",
     "event_id",
     "event_label",
+    "event_label_display",
     "farm",
     "in_event_window",
 }

@@ -34,16 +34,27 @@ def apply_plot_theme(fig, height: int = CHART_HEIGHT):
     return fig
 
 
+def _label_color_map():
+    return {
+        "anomaly": ANOMALY,
+        "anom": ANOMALY,
+        "normal": NORMAL,
+        "norm": NORMAL,
+    }
+
+
 def make_severity_histogram(farm_summary):
+    hist_col = "severity_score_log" if "severity_score_log" in farm_summary.columns else "severity_score"
+
     fig = px.histogram(
         farm_summary,
-        x="severity_score",
+        x=hist_col,
         nbins=20,
         title="Severity Score Distribution"
     )
     fig.update_traces(marker_color=HIST, marker_line_width=0)
     fig.update_layout(
-        xaxis_title="Severity Score",
+        xaxis_title="Log Severity Score" if hist_col == "severity_score_log" else "Severity Score",
         yaxis_title="Frequency",
         showlegend=False
     )
@@ -51,21 +62,20 @@ def make_severity_histogram(farm_summary):
 
 
 def make_severity_boxplot(farm_summary):
+    score_col = "severity_score_normalized" if "severity_score_normalized" in farm_summary.columns else "severity_score"
+
     fig = px.box(
         farm_summary,
-        x="event_label",
-        y="severity_score",
-        color="event_label",
+        x="event_label_display",
+        y=score_col,
+        color="event_label_display",
         points="all",
         title="Severity Score Comparison",
-        color_discrete_map={
-            "anomaly": ANOMALY,
-            "normal": NORMAL
-        }
+        color_discrete_map=_label_color_map()
     )
     fig.update_layout(
         xaxis_title="Event Type",
-        yaxis_title="Severity Score"
+        yaxis_title="Normalized Severity Score" if score_col == "severity_score_normalized" else "Severity Score"
     )
     return apply_plot_theme(fig)
 
@@ -75,13 +85,10 @@ def make_wind_power_scatter(wind_power_df):
         wind_power_df,
         x="wind_speed",
         y="power_output",
-        color="event_label",
+        color="event_label_display",
         opacity=0.65,
         title="Wind Speed vs Power Output",
-        color_discrete_map={
-            "anomaly": ANOMALY,
-            "normal": NORMAL
-        }
+        color_discrete_map=_label_color_map()
     )
     fig.update_traces(marker=dict(size=7))
     fig.update_layout(
@@ -92,16 +99,22 @@ def make_wind_power_scatter(wind_power_df):
 
 
 def make_sensor_bar(top_sensors):
+    metric_col = "importance_difference" if "importance_difference" in top_sensors.columns else "z_difference"
+
     fig = px.bar(
-        top_sensors.sort_values("z_difference", ascending=True),
-        x="z_difference",
+        top_sensors.sort_values(metric_col, ascending=True),
+        x=metric_col,
         y="sensor",
         orientation="h",
         title="Sensors Most Associated with Anomalous Behavior"
     )
     fig.update_traces(marker_color=BAR)
     fig.update_layout(
-        xaxis_title="Average Anomaly Deviation - Average Normal Deviation",
+        xaxis_title=(
+            "Average Anomaly Importance - Average Normal Importance"
+            if metric_col == "importance_difference"
+            else "Average Anomaly Z-Shift - Average Normal Z-Shift"
+        ),
         yaxis_title=""
     )
     return apply_plot_theme(fig)
