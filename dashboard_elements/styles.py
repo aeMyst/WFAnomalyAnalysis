@@ -1,5 +1,5 @@
 import streamlit as st
-from theme import BG, CARD_BG, NAVY, TEXT_DARK, TEXT_MID, TEXT_SOFT
+from dashboard_elements.theme import BG, CARD_BG, NAVY, TEXT_DARK, TEXT_MID, TEXT_SOFT
 
 
 def apply_global_styles():

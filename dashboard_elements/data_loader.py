@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from config import FARM_SLUGS, PROCESSED_DIR, STATUS_LABELS
+from dashboard_elements.config import FARM_SLUGS, PROCESSED_DIR, STATUS_LABELS
 
 
 def normalize_event_label(value: str) -> str:

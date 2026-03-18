@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import META_COLS
-from data_loader import load_event_data, load_summary
+from dashboard_elements.config import META_COLS
+from dashboard_elements.data_loader import load_event_data, load_summary
 
 
 def normalize_event_label(value: str) -> str:

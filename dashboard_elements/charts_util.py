@@ -1,6 +1,6 @@
 import plotly.express as px
 
-from theme import ANOMALY, BAR, CARD_BG, GRID, HIST, NAVY, NORMAL, TEXT_MID, TEXT_SOFT
+from dashboard_elements.theme import ANOMALY, BAR, CARD_BG, GRID, HIST, NAVY, NORMAL, TEXT_MID, TEXT_SOFT
 
 
 CHART_HEIGHT = 400

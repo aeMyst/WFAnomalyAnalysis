@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from charts_util import (
+from dashboard_elements.charts_util import (
     CHART_HEIGHT,
     make_sensor_bar,
     make_severity_boxplot,
@@ -10,9 +10,9 @@ from charts_util import (
     make_wind_power_scatter,
     make_asset_severity_bar
 )
-from data_loader import load_status_distribution, load_summary
-from helper import compute_sensor_separation_for_farm, load_wind_power_points
-from styles import apply_global_styles
+from dashboard_elements.data_loader import load_status_distribution, load_summary
+from dashboard_elements.helper import compute_sensor_separation_for_farm, load_wind_power_points
+from dashboard_elements.styles import apply_global_styles
 
 load_dotenv()
 
